@@ -1,8 +1,6 @@
 # iOS Hot Reload
 
-<p align="center">
-  <img src="./repository-logo.png" alt="iOS Hot Reload Logo" width="600"/>
-</p>
+![ios-hot-reload-movie](https://github.com/user-attachments/assets/e0ffe963-40d1-4eb9-9afa-99c1a2e09f08)
 
 <p align="center">
   <a href="https://github.com/aose-yuu/ios-hot-reload/blob/main/LICENSE">

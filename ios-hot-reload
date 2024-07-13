@@ -1,15 +1,20 @@
 #!/bin/bash
 
 # Check if current directory is an Xcode project
-if [ ! -f "*.xcodeproj" ] && [ ! -f "*.xcworkspace" ]; then
+if [ ! -d "$(pwd)/"*.xcodeproj ] && [ ! -d "$(pwd)/"*.xcworkspace ]; then
     echo "Error: Current directory is not an Xcode project."
     echo "Please run this command from the root of your Xcode project."
     exit 1
 fi
 
 # Find project file
-PROJECT_FILE=$(find . -maxdepth 1 -name "*.xcodeproj")
-WORKSPACE_FILE=$(find . -maxdepth 1 -name "*.xcworkspace")
+PROJECT_FILE=$(find "$(pwd)" -maxdepth 1 -name "*.xcodeproj")
+WORKSPACE_FILE=$(find "$(pwd)" -maxdepth 1 -name "*.xcworkspace")
+
+if [ -z "$PROJECT_FILE" ] && [ -z "$WORKSPACE_FILE" ]; then
+    echo "Error: No Xcode project or workspace found in the current directory."
+    exit 1
+fi
 
 if [ -n "$WORKSPACE_FILE" ]; then
     BUILD_CMD="xcodebuild -workspace ${WORKSPACE_FILE##*/}"
@@ -29,7 +34,7 @@ if [ -z "$SCHEME_NAME" ]; then
 fi
 
 # Directory to watch (usually the source code directory)
-WATCH_DIR="."
+WATCH_DIR="$(pwd)"
 
 # Lock file
 LOCK_FILE="/tmp/auto_build_run.lock"

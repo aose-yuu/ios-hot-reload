@@ -55,13 +55,23 @@ sudo ./install.sh
 
 The script will be installed to `/usr/local/bin` and will be available system-wide.
 
+4. Reload `.zshrc`
+
+Please restart your terminal or run `source ~/.zshrc` to apply changes.
+
 ## 🗑 Uninstallation
 
-To remove ios-hot-reload from your system, run the following command:
+1. To remove ios-hot-reload from your system
+
+run the following command:
 
 ```bash
 ios-hot-reload uninstall
 ```
+
+2. Reload `.zshrc`
+
+Please restart your terminal or run `source ~/.zshrc` to apply changes.
 
 ## 🚀 Usage
 

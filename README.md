@@ -6,9 +6,6 @@
   <a href="https://github.com/aose-yuu/ios-hot-reload/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/aose-yuu/ios-hot-reload" alt="License">
   </a>
-  <a href="https://github.com/aose-yuu/ios-hot-reload/releases">
-    <img src="https://img.shields.io/github/v/release/aose-yuu/ios-hot-reload" alt="GitHub release">
-  </a>
   <a href="https://github.com/aose-yuu/ios-hot-reload/issues">
     <img src="https://img.shields.io/github/issues/aose-yuu/ios-hot-reload" alt="Issues">
   </a>

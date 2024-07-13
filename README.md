@@ -5,17 +5,17 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/yourusername/ios-hot-reload/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/yourusername/ios-hot-reload" alt="License">
+  <a href="https://github.com/aose-yuu/ios-hot-reload/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/aose-yuu/ios-hot-reload" alt="License">
   </a>
-  <a href="https://github.com/yourusername/ios-hot-reload/releases">
-    <img src="https://img.shields.io/github/v/release/yourusername/ios-hot-reload" alt="GitHub release">
+  <a href="https://github.com/aose-yuu/ios-hot-reload/releases">
+    <img src="https://img.shields.io/github/v/release/aose-yuu/ios-hot-reload" alt="GitHub release">
   </a>
-  <a href="https://github.com/yourusername/ios-hot-reload/issues">
-    <img src="https://img.shields.io/github/issues/yourusername/ios-hot-reload" alt="Issues">
+  <a href="https://github.com/aose-yuu/ios-hot-reload/issues">
+    <img src="https://img.shields.io/github/issues/aose-yuu/ios-hot-reload" alt="Issues">
   </a>
-  <a href="https://github.com/yourusername/ios-hot-reload/stargazers">
-    <img src="https://img.shields.io/github/stars/yourusername/ios-hot-reload" alt="Stars">
+  <a href="https://github.com/aose-yuu/ios-hot-reload/stargazers">
+    <img src="https://img.shields.io/github/stars/aose-yuu/ios-hot-reload" alt="Stars">
   </a>
 </p>
 

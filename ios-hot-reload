@@ -51,7 +51,7 @@ ORIGINAL_APP=$(osascript -e 'tell application "System Events" to get name of fir
 # Function to display messages
 show_message() {
     current_time=$(date +%s)
-    if [ ! -f "$LAST_MESSAGE_FILE" ] || [ $((current_time - $(cat "$LAST_MESSAGE_FILE"))) -ge 5 ]; then
+    if [ ! -f "$LAST_MESSAGE_FILE" ] || [ $((current_time - $(cat "$LAST_MESSAGE_FILE"))) -ge 3 ]; then
         echo "$1"
         echo "$current_time" > "$LAST_MESSAGE_FILE"
     fi
@@ -77,13 +77,13 @@ trap cleanup EXIT
 
 # Build and run function
 build_and_run() {
-    # Skip if less than 5 seconds since last build
+    # Skip if less than 3 seconds since last build
     if [ -f "$LAST_BUILD_FILE" ]; then
         last_build_time=$(cat "$LAST_BUILD_FILE")
         current_time=$(date +%s)
         time_diff=$((current_time - last_build_time))
-        if [ $time_diff -lt 5 ]; then
-            show_message "Less than 5 seconds since last build. Skipping."
+        if [ $time_diff -lt 3 ]; then
+            show_message "Less than 3 seconds since last build. Skipping."
             return
         fi
     fi

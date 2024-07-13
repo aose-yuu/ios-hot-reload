@@ -83,7 +83,7 @@ ios-hot-reload
 
 - The command will only work when run from the root directory of an Xcode project.
 - The script uses `osascript`, which may require privacy permissions. You may need to grant appropriate permissions in System Preferences > Security & Privacy > Privacy > Accessibility.
-- The script is set to ignore rapid successive changes (within 5 seconds) to prevent unnecessary rebuilds.
+- The script is set to ignore rapid successive changes (within 3 seconds) to prevent unnecessary rebuilds.
 - If you encounter any issues with app name or bundle ID detection, you may need to adjust the relevant parts of the script.
 
 ## 🤝 Contributing

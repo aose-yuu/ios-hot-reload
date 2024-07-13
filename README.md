@@ -65,7 +65,7 @@ The script will be installed to `/usr/local/bin` and will be available system-wi
 To remove ios-hot-reload from your system, run the following command:
 
 ```bash
-sudo ./uninstall.sh
+sudo ios-hot-reload uninstall
 ```
 
 ## 🚀 Usage
@@ -74,7 +74,7 @@ sudo ./uninstall.sh
 2. Run the command:
 
 ```bash
-ios-hot-reload
+ios-hot-reload run
 ```
 
 3. The script will start monitoring for file changes. Any changes in the project directory will trigger a rebuild and relaunch of the app in the iOS Simulator.

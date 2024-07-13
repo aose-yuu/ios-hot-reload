@@ -1,164 +1,265 @@
 #!/bin/bash
 
-# Check if current directory is an Xcode project
-if [ ! -d "$(pwd)/"*.xcodeproj ] && [ ! -d "$(pwd)/"*.xcworkspace ]; then
-    echo "Error: Current directory is not an Xcode project."
-    echo "Please run this command from the root of your Xcode project."
-    exit 1
-fi
+VERSION="1.0.0"
+INSTALL_DIR="$HOME/.ios-hot-reload"
+BIN_DIR="$INSTALL_DIR/bin"
 
-# Find project file
-PROJECT_FILE=$(find "$(pwd)" -maxdepth 1 -name "*.xcodeproj")
-WORKSPACE_FILE=$(find "$(pwd)" -maxdepth 1 -name "*.xcworkspace")
-
-if [ -z "$PROJECT_FILE" ] && [ -z "$WORKSPACE_FILE" ]; then
-    echo "Error: No Xcode project or workspace found in the current directory."
-    exit 1
-fi
-
-if [ -n "$WORKSPACE_FILE" ]; then
-    BUILD_CMD="xcodebuild -workspace ${WORKSPACE_FILE##*/}"
-elif [ -n "$PROJECT_FILE" ]; then
-    BUILD_CMD="xcodebuild -project ${PROJECT_FILE##*/}"
-else
-    echo "Error: No Xcode project or workspace found in the current directory."
-    exit 1
-fi
-
-# Get scheme name
-SCHEME_NAME=$(xcodebuild -list -json | grep -m 1 '"name" :' | sed 's/.*: "\(.*\)".*/\1/')
-
-if [ -z "$SCHEME_NAME" ]; then
-    echo "Error: No scheme found in the project."
-    exit 1
-fi
-
-# Directory to watch (usually the source code directory)
-WATCH_DIR="$(pwd)"
-
-# Lock file
-LOCK_FILE="/tmp/auto_build_run.lock"
-
-# File to record the last build time
-LAST_BUILD_FILE="/tmp/last_build_time"
-
-# File to record the last message output time
-LAST_MESSAGE_FILE="/tmp/last_message_time"
-
-# Record the active application at the start of the script
-ORIGINAL_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true')
-
-# Function to display messages
-show_message() {
-    current_time=$(date +%s)
-    if [ ! -f "$LAST_MESSAGE_FILE" ] || [ $((current_time - $(cat "$LAST_MESSAGE_FILE"))) -ge 3 ]; then
-        echo "$1"
-        echo "$current_time" > "$LAST_MESSAGE_FILE"
+# Function to run the hot reload
+run_hot_reload() {
+    # Check if current directory is an Xcode project
+    if [ ! -d "$(pwd)/"*.xcodeproj ] && [ ! -d "$(pwd)/"*.xcworkspace ]; then
+        echo "Error: Current directory is not an Xcode project."
+        echo "Please run this command from the root of your Xcode project."
+        exit 1
     fi
-}
 
-# Function to return focus to the specified application
-return_focus() {
-    local app_name="$1"
-    osascript <<EOF
-tell application "$app_name"
-    activate
-end tell
-EOF
-}
+    # Find project file
+    PROJECT_FILE=$(find "$(pwd)" -maxdepth 1 -name "*.xcodeproj")
+    WORKSPACE_FILE=$(find "$(pwd)" -maxdepth 1 -name "*.xcworkspace")
 
-# Function to ensure lock file is removed
-cleanup() {
-    rm -f "$LOCK_FILE"
-}
+    if [ -z "$PROJECT_FILE" ] && [ -z "$WORKSPACE_FILE" ]; then
+        echo "Error: No Xcode project or workspace found in the current directory."
+        exit 1
+    fi
 
-# Call cleanup function when script exits
-trap cleanup EXIT
+    if [ -n "$WORKSPACE_FILE" ]; then
+        BUILD_CMD="xcodebuild -workspace ${WORKSPACE_FILE##*/}"
+    elif [ -n "$PROJECT_FILE" ]; then
+        BUILD_CMD="xcodebuild -project ${PROJECT_FILE##*/}"
+    else
+        echo "Error: No Xcode project or workspace found in the current directory."
+        exit 1
+    fi
 
-# Build and run function
-build_and_run() {
-    # Skip if less than 3 seconds since last build
-    if [ -f "$LAST_BUILD_FILE" ]; then
-        last_build_time=$(cat "$LAST_BUILD_FILE")
+    # Get scheme name
+    SCHEME_NAME=$(xcodebuild -list -json | grep -m 1 '"name" :' | sed 's/.*: "\(.*\)".*/\1/')
+
+    if [ -z "$SCHEME_NAME" ]; then
+        echo "Error: No scheme found in the project."
+        exit 1
+    fi
+
+    # Directory to watch (usually the source code directory)
+    WATCH_DIR="$(pwd)"
+
+    # Lock file
+    LOCK_FILE="/tmp/auto_build_run.lock"
+
+    # File to record the last build time
+    LAST_BUILD_FILE="/tmp/last_build_time"
+
+    # File to record the last message output time
+    LAST_MESSAGE_FILE="/tmp/last_message_time"
+
+    # Record the active application at the start of the script
+    ORIGINAL_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true')
+
+    # Function to display messages
+    show_message() {
         current_time=$(date +%s)
-        time_diff=$((current_time - last_build_time))
-        if [ $time_diff -lt 3 ]; then
-            show_message "Less than 3 seconds since last build. Skipping."
+        if [ ! -f "$LAST_MESSAGE_FILE" ] || [ $((current_time - $(cat "$LAST_MESSAGE_FILE"))) -ge 3 ]; then
+            echo "$1"
+            echo "$current_time" > "$LAST_MESSAGE_FILE"
+        fi
+    }
+
+    # Function to return focus to the specified application
+    return_focus() {
+        local app_name="$1"
+        osascript <<EOF
+    tell application "$app_name"
+        activate
+    end tell
+EOF
+    }
+
+    # Function to ensure lock file is removed
+    cleanup() {
+        rm -f "$LOCK_FILE"
+    }
+
+    # Call cleanup function when script exits
+    trap cleanup EXIT
+
+    # Function to create a summary of the build log
+    summarize_build_log() {
+        echo "Build Summary:"
+        echo "Errors: $(grep -c "error:" "$BUILD_LOG")"
+        echo "Warnings: $(grep -c "warning:" "$BUILD_LOG")"
+        echo "------------------------"
+    }
+
+    # Function to display colored error messages
+    display_colored_errors() {
+        grep -E "error:|warning:" "$BUILD_LOG" | sort | uniq | head -n 10 | \
+        sed 's/.*error:/\x1b[31mError:\x1b[0m/' | \
+        sed 's/.*warning:/\x1b[33mWarning:\x1b[0m/'
+    }
+
+    # Build and run function
+    build_and_run() {
+        # Skip if less than 3 seconds since last build
+        if [ -f "$LAST_BUILD_FILE" ]; then
+            last_build_time=$(cat "$LAST_BUILD_FILE")
+            current_time=$(date +%s)
+            time_diff=$((current_time - last_build_time))
+            if [ $time_diff -lt 3 ]; then
+                show_message "Less than 3 seconds since last build. Skipping."
+                return
+            fi
+        fi
+
+        # Skip if build process is already in progress
+        if [ ! -f "$LOCK_FILE" ] && ! ln -s /dev/null "$LOCK_FILE" 2>/dev/null; then
+            show_message "Build process is in progress. Skipping."
             return
         fi
-    fi
 
-    # Skip if build process is already in progress
-    if [ ! -f "$LOCK_FILE" ] && ! ln -s /dev/null "$LOCK_FILE" 2>/dev/null; then
-        show_message "Build process is in progress. Skipping."
-        return
-    fi
+        echo "Change detected. Starting build..."
+        
+        # Build with spinner animation
+        BUILD_LOG=$(mktemp)
+        spinner=('|' '/' '-' '\')
 
-    echo "Change detected. Starting build..."
-    
-    # Build
-    $BUILD_CMD build -scheme "$SCHEME_NAME" -sdk iphonesimulator -configuration Debug -derivedDataPath build
+        # Run build in background and redirect all output to file
+        $BUILD_CMD build -scheme "$SCHEME_NAME" -sdk iphonesimulator -configuration Debug -derivedDataPath build > "$BUILD_LOG" 2>&1 &
+        build_pid=$!
 
-    build_result=$?
-    # Record current time as last build time
-    date +%s > "$LAST_BUILD_FILE"
+        # Display spinner animation
+        i=0
+        while kill -0 $build_pid 2>/dev/null; do
+            printf "\r[%c] Building... " "${spinner[i]}"
+            i=$(( (i + 1) % ${#spinner[@]} ))
+            sleep 0.1
+        done
 
-    if [ $build_result -ne 0 ]; then
-        echo "Build failed."
+        # Wait for build process to finish
+        wait $build_pid
+        build_result=$?
+
+        printf "\r"  # Move cursor to the beginning of the line
+        echo "Build process completed.   "
+
+        # Record current time as last build time
+        date +%s > "$LAST_BUILD_FILE"
+
+        if [ $build_result -ne 0 ]; then
+            echo "Build failed. Error details:"
+            echo "------------------------"
+            summarize_build_log
+            echo "------------------------"
+            echo "Unique errors and warnings:"
+            display_colored_errors
+            echo "------------------------"
+            echo "For full details, check $BUILD_LOG"
+            rm -f "$LOCK_FILE"
+            return
+        fi
+
+        echo "** BUILD SUCCEEDED **"
+
+        # Get app name
+        APP_PATH=$(find build -name "*.app" -print -quit)
+        if [ -z "$APP_PATH" ]; then
+            echo "Error: Built app not found."
+            rm -f "$LOCK_FILE"
+            return
+        fi
+        APP_NAME=$(basename "$APP_PATH" .app)
+
+        # Get Bundle ID
+        PLIST_BUDDY="/usr/libexec/PlistBuddy"
+        if [ ! -f "$PLIST_BUDDY" ]; then
+            echo "Error: PlistBuddy not found. Cannot retrieve Bundle ID."
+            rm -f "$LOCK_FILE"
+            return
+        fi
+        BUNDLE_ID=$("$PLIST_BUDDY" -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist")
+        if [ -z "$BUNDLE_ID" ]; then
+            echo "Error: Bundle ID not found."
+            rm -f "$LOCK_FILE"
+            return
+        fi
+
+        echo "App Path: $APP_PATH"
+        echo "Bundle ID: $BUNDLE_ID"
+
+        # Launch simulator (does nothing if already running)
+        open -a Simulator
+
+        # Install and launch app
+        xcrun simctl install booted "$APP_PATH"
+        xcrun simctl launch booted "$BUNDLE_ID"
+
+        echo "Build and launch completed. Continuing to monitor for changes..."
+
+        # Return focus to original application
+        return_focus "$ORIGINAL_APP"
+
+        # Remove lock file
         rm -f "$LOCK_FILE"
-        return
-    fi
+    }
 
-    # Get app name
-    APP_PATH=$(find build -name "*.app" -print -quit)
-    if [ -z "$APP_PATH" ]; then
-        echo "Error: Built app not found."
-        rm -f "$LOCK_FILE"
-        return
-    fi
-    APP_NAME=$(basename "$APP_PATH" .app)
+    echo "Monitoring for file changes..."
+    echo "Original application: $ORIGINAL_APP"
 
-    # Get Bundle ID
-    PLIST_BUDDY="/usr/libexec/PlistBuddy"
-    if [ ! -f "$PLIST_BUDDY" ]; then
-        echo "Error: PlistBuddy not found. Cannot retrieve Bundle ID."
-        rm -f "$LOCK_FILE"
-        return
-    fi
-    BUNDLE_ID=$("$PLIST_BUDDY" -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist")
-    if [ -z "$BUNDLE_ID" ]; then
-        echo "Error: Bundle ID not found."
-        rm -f "$LOCK_FILE"
-        return
-    fi
+    # Initial build and run
+    build_and_run
 
-    echo "App Path: $APP_PATH"
-    echo "Bundle ID: $BUNDLE_ID"
-
-    # Launch simulator (does nothing if already running)
-    open -a Simulator
-
-    # Install and launch app
-    xcrun simctl install booted "$APP_PATH"
-    xcrun simctl launch booted "$BUNDLE_ID"
-
-    echo "Build and launch completed. Continuing to monitor for changes..."
-
-    # Return focus to original application
-    return_focus "$ORIGINAL_APP"
-
-    # Remove lock file
-    rm -f "$LOCK_FILE"
+    # Monitor for file changes and build/run when changes occur
+    fswatch -o -l 2 "$WATCH_DIR" | while read f
+    do
+        build_and_run
+    done
 }
 
-echo "Monitoring for file changes..."
-echo "Original application: $ORIGINAL_APP"
+# Function to uninstall the script
+uninstall_script() {
+    echo "Uninstalling ios-hot-reload..."
+    
+    # Remove the installation directory
+    rm -rf "$INSTALL_DIR"
+    
+    # Remove the completion script
+    rm -rf "/usr/local/etc/bash_completion.d/ios-hot-reload"
+    
+    # Determine which shell configuration file to modify
+    SHELL_CONFIG="$HOME/.zshrc"
+    if [ -f "$HOME/.bashrc" ]; then
+        SHELL_CONFIG="$HOME/.bashrc"
+    fi
+    
+    # Remove the PATH addition from the shell configuration file
+    if [ -f "$SHELL_CONFIG" ]; then
+        sed -i.bak '/# ios-hot-reload PATH addition/d' "$SHELL_CONFIG"
+        sed -i.bak '/export PATH=.*ios-hot-reload/d' "$SHELL_CONFIG"
+        rm -f "${SHELL_CONFIG}.bak"
+    fi
+    
+    echo "Uninstallation completed. Please restart your terminal or run 'source $SHELL_CONFIG' to apply changes."
+}
 
-# Initial build and run
-build_and_run
+# Function to display version
+show_version() {
+    echo "ios-hot-reload version $VERSION"
+}
 
-# Monitor for file changes and build/run when changes occur
-fswatch -o -l 2 "$WATCH_DIR" | while read f
-do
-    build_and_run
-done
+# Main command logic
+case "$1" in
+    run)
+        run_hot_reload
+        ;;
+    uninstall)
+        uninstall_script
+        ;;
+    -v|--version)
+        show_version
+        ;;
+    *)
+        echo "Usage: ios-hot-reload [run|uninstall|-v|--version]"
+        echo "  run               : Run the hot reload script"
+        echo "  uninstall         : Remove the script"
+        echo "  -v|--version : Display the current version"
+        exit 1
+        ;;
+esac

@@ -60,6 +60,14 @@ sudo ./install.sh
 
 The script will be installed to `/usr/local/bin` and will be available system-wide.
 
+## 🗑 Uninstallation
+
+To remove ios-hot-reload from your system, run the following command:
+
+```bash
+sudo ./uninstall.sh
+```
+
 ## 🚀 Usage
 
 1. Navigate to your Xcode project's root directory in the terminal.

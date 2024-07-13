@@ -1,7 +1,7 @@
 # iOS Hot Reload
 
 <p align="center">
-  <img src="https://your-logo-url-here.png" alt="iOS Hot Reload Logo" width="200"/>
+  <img src="./repository-logo.png" alt="iOS Hot Reload Logo" width="200"/>
 </p>
 
 <p align="center">

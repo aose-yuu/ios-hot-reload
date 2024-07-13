@@ -1,0 +1,159 @@
+#!/bin/bash
+
+# Check if current directory is an Xcode project
+if [ ! -f "*.xcodeproj" ] && [ ! -f "*.xcworkspace" ]; then
+    echo "Error: Current directory is not an Xcode project."
+    echo "Please run this command from the root of your Xcode project."
+    exit 1
+fi
+
+# Find project file
+PROJECT_FILE=$(find . -maxdepth 1 -name "*.xcodeproj")
+WORKSPACE_FILE=$(find . -maxdepth 1 -name "*.xcworkspace")
+
+if [ -n "$WORKSPACE_FILE" ]; then
+    BUILD_CMD="xcodebuild -workspace ${WORKSPACE_FILE##*/}"
+elif [ -n "$PROJECT_FILE" ]; then
+    BUILD_CMD="xcodebuild -project ${PROJECT_FILE##*/}"
+else
+    echo "Error: No Xcode project or workspace found in the current directory."
+    exit 1
+fi
+
+# Get scheme name
+SCHEME_NAME=$(xcodebuild -list -json | grep -m 1 '"name" :' | sed 's/.*: "\(.*\)".*/\1/')
+
+if [ -z "$SCHEME_NAME" ]; then
+    echo "Error: No scheme found in the project."
+    exit 1
+fi
+
+# Directory to watch (usually the source code directory)
+WATCH_DIR="."
+
+# Lock file
+LOCK_FILE="/tmp/auto_build_run.lock"
+
+# File to record the last build time
+LAST_BUILD_FILE="/tmp/last_build_time"
+
+# File to record the last message output time
+LAST_MESSAGE_FILE="/tmp/last_message_time"
+
+# Record the active application at the start of the script
+ORIGINAL_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true')
+
+# Function to display messages
+show_message() {
+    current_time=$(date +%s)
+    if [ ! -f "$LAST_MESSAGE_FILE" ] || [ $((current_time - $(cat "$LAST_MESSAGE_FILE"))) -ge 5 ]; then
+        echo "$1"
+        echo "$current_time" > "$LAST_MESSAGE_FILE"
+    fi
+}
+
+# Function to return focus to the specified application
+return_focus() {
+    local app_name="$1"
+    osascript <<EOF
+tell application "$app_name"
+    activate
+end tell
+EOF
+}
+
+# Function to ensure lock file is removed
+cleanup() {
+    rm -f "$LOCK_FILE"
+}
+
+# Call cleanup function when script exits
+trap cleanup EXIT
+
+# Build and run function
+build_and_run() {
+    # Skip if less than 5 seconds since last build
+    if [ -f "$LAST_BUILD_FILE" ]; then
+        last_build_time=$(cat "$LAST_BUILD_FILE")
+        current_time=$(date +%s)
+        time_diff=$((current_time - last_build_time))
+        if [ $time_diff -lt 5 ]; then
+            show_message "Less than 5 seconds since last build. Skipping."
+            return
+        fi
+    fi
+
+    # Skip if build process is already in progress
+    if [ ! -f "$LOCK_FILE" ] && ! ln -s /dev/null "$LOCK_FILE" 2>/dev/null; then
+        show_message "Build process is in progress. Skipping."
+        return
+    fi
+
+    echo "Change detected. Starting build..."
+    
+    # Build
+    $BUILD_CMD build -scheme "$SCHEME_NAME" -sdk iphonesimulator -configuration Debug -derivedDataPath build
+
+    build_result=$?
+    # Record current time as last build time
+    date +%s > "$LAST_BUILD_FILE"
+
+    if [ $build_result -ne 0 ]; then
+        echo "Build failed."
+        rm -f "$LOCK_FILE"
+        return
+    fi
+
+    # Get app name
+    APP_PATH=$(find build -name "*.app" -print -quit)
+    if [ -z "$APP_PATH" ]; then
+        echo "Error: Built app not found."
+        rm -f "$LOCK_FILE"
+        return
+    fi
+    APP_NAME=$(basename "$APP_PATH" .app)
+
+    # Get Bundle ID
+    PLIST_BUDDY="/usr/libexec/PlistBuddy"
+    if [ ! -f "$PLIST_BUDDY" ]; then
+        echo "Error: PlistBuddy not found. Cannot retrieve Bundle ID."
+        rm -f "$LOCK_FILE"
+        return
+    fi
+    BUNDLE_ID=$("$PLIST_BUDDY" -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist")
+    if [ -z "$BUNDLE_ID" ]; then
+        echo "Error: Bundle ID not found."
+        rm -f "$LOCK_FILE"
+        return
+    fi
+
+    echo "App Path: $APP_PATH"
+    echo "Bundle ID: $BUNDLE_ID"
+
+    # Launch simulator (does nothing if already running)
+    open -a Simulator
+
+    # Install and launch app
+    xcrun simctl install booted "$APP_PATH"
+    xcrun simctl launch booted "$BUNDLE_ID"
+
+    echo "Build and launch completed. Continuing to monitor for changes..."
+
+    # Return focus to original application
+    return_focus "$ORIGINAL_APP"
+
+    # Remove lock file
+    rm -f "$LOCK_FILE"
+}
+
+echo "Monitoring for file changes..."
+echo "Original application: $ORIGINAL_APP"
+
+# Initial build and run
+build_and_run
+
+# Monitor for file changes and build/run when changes occur
+fswatch -o -l 2 "$WATCH_DIR" | while read f
+do
+    build_and_run
+done

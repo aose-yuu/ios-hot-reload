@@ -63,7 +63,7 @@ The script will be installed to `/usr/local/bin` and will be available system-wi
 To remove ios-hot-reload from your system, run the following command:
 
 ```bash
-sudo ios-hot-reload uninstall
+ios-hot-reload uninstall
 ```
 
 ## 🚀 Usage

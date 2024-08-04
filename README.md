@@ -27,11 +27,13 @@
 - 🔒 Prevents multiple simultaneous builds
 - 🔙 Returns focus to the original application after building and running
 - 🏗️ Works with both `.xcodeproj` and `.xcworkspace` project formats
+- 🔄 Executes `tuist generate` before each build to ensure up-to-date project files
 
 ## 🔧 Prerequisites
 
 - Xcode Command Line Tools
 - `fswatch` (can be installed via Homebrew: `brew install fswatch`)
+- [`tuist`](https://github.com/tuist/tuist?tab=readme-ov-file) (for projects using Tuist)
 
 ## 📦 Installation
 
@@ -82,14 +84,15 @@ Please restart your terminal or run `source ~/.zshrc` to apply changes.
 ios-hot-reload run
 ```
 
-3. The script will start monitoring for file changes. Any changes in the project directory will trigger a rebuild and relaunch of the app in the iOS Simulator.
+3.The script will start monitoring for file changes. Any changes in the project directory will trigger a tuist generate command, followed by a rebuild and relaunch of the app in the iOS Simulator. 
 
 ## 📝 Notes
 
 - The command will only work when run from the root directory of an Xcode project.
-- The script uses `osascript`, which may require privacy permissions. You may need to grant appropriate permissions in System Preferences > Security & Privacy > Privacy > Accessibility.
-- The script is set to ignore rapid successive changes (within 3 seconds) to prevent unnecessary rebuilds.
+- The script uses osascript, which may require privacy permissions. You may need to grant appropriate permissions in System Preferences > Security & Privacy > Privacy > Accessibility.
+- The script is set to ignore rapid successive changes (within 5 seconds) to prevent unnecessary rebuilds.
 - If you encounter any issues with app name or bundle ID detection, you may need to adjust the relevant parts of the script.
+- The script now includes a tuist generate step before each build. Ensure that your project is set up to use Tuist if you want to take advantage of this feature.
 
 ## 🤝 Contributing
 

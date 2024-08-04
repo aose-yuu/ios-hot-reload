@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 INSTALL_DIR="$HOME/.ios-hot-reload"
 BIN_DIR="$INSTALL_DIR/bin"
 
@@ -14,17 +14,14 @@ run_hot_reload() {
     fi
 
     # Find project file
-    PROJECT_FILE=$(find "$(pwd)" -maxdepth 1 -name "*.xcodeproj")
-    WORKSPACE_FILE=$(find "$(pwd)" -maxdepth 1 -name "*.xcworkspace")
+    PROJECT_FILE=$(find "$(pwd)" -name "*.xcodeproj")
 
-    if [ -z "$PROJECT_FILE" ] && [ -z "$WORKSPACE_FILE" ]; then
+    if [ -z "$PROJECT_FILE" ]; then
         echo "Error: No Xcode project or workspace found in the current directory."
         exit 1
     fi
 
-    if [ -n "$WORKSPACE_FILE" ]; then
-        BUILD_CMD="xcodebuild -workspace ${WORKSPACE_FILE##*/}"
-    elif [ -n "$PROJECT_FILE" ]; then
+    if [ -n "$PROJECT_FILE" ]; then
         BUILD_CMD="xcodebuild -project ${PROJECT_FILE##*/}"
     else
         echo "Error: No Xcode project or workspace found in the current directory."
@@ -42,6 +39,13 @@ run_hot_reload() {
     # Directory to watch (usually the source code directory)
     WATCH_DIR="$(pwd)"
 
+    # Paths to ignore
+    IGNORE_PATHS=(
+      "--exclude" '.*build.*'
+      "--exclude" '.*\.xcodeproj'
+      "--exclude" '.*\.xcworkspace'
+    )
+
     # Lock file
     LOCK_FILE="/tmp/auto_build_run.lock"
 
@@ -50,6 +54,12 @@ run_hot_reload() {
 
     # File to record the last message output time
     LAST_MESSAGE_FILE="/tmp/last_message_time"
+
+    # Debounce time in seconds
+    DEBOUNCE_SECONDS=5
+
+    # Flag to indicate if a build is in progress
+    BUILD_IN_PROGRESS=0
 
     # Record the active application at the start of the script
     ORIGINAL_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true')
@@ -98,28 +108,34 @@ EOF
 
     # Build and run function
     build_and_run() {
-        # Skip if less than 3 seconds since last build
+        # Skip if build is in progress
+        if [ $BUILD_IN_PROGRESS -eq 1 ]; then
+            show_message "Build in progress. Skipping."
+            return
+        fi
+
+        # Implement debounce
+        current_time=$(date +%s)
         if [ -f "$LAST_BUILD_FILE" ]; then
             last_build_time=$(cat "$LAST_BUILD_FILE")
-            current_time=$(date +%s)
             time_diff=$((current_time - last_build_time))
-            if [ $time_diff -lt 3 ]; then
-                show_message "Less than 3 seconds since last build. Skipping."
+            if [ $time_diff -lt $DEBOUNCE_SECONDS ]; then
+                show_message "Less than $DEBOUNCE_SECONDS seconds since last build. Skipping."
                 return
             fi
         fi
 
-        # Skip if build process is already in progress
-        if [ ! -f "$LOCK_FILE" ] && ! ln -s /dev/null "$LOCK_FILE" 2>/dev/null; then
-            show_message "Build process is in progress. Skipping."
-            return
-        fi
+        # Set build in progress flag
+        BUILD_IN_PROGRESS=1
 
         echo "Change detected. Starting build..."
         
         # Build with spinner animation
         BUILD_LOG=$(mktemp)
         spinner=('|' '/' '-' '\')
+
+        # Generate project files
+        tuist generate --no-open
 
         # Run build in background and redirect all output to file
         $BUILD_CMD build -scheme "$SCHEME_NAME" -sdk iphonesimulator -configuration Debug -derivedDataPath build > "$BUILD_LOG" 2>&1 &
@@ -141,7 +157,7 @@ EOF
         echo "Build process completed.   "
 
         # Record current time as last build time
-        date +%s > "$LAST_BUILD_FILE"
+        echo "$current_time" > "$LAST_BUILD_FILE"
 
         if [ $build_result -ne 0 ]; then
             echo "Build failed. Error details:"
@@ -152,7 +168,7 @@ EOF
             display_colored_errors
             echo "------------------------"
             echo "For full details, check $BUILD_LOG"
-            rm -f "$LOCK_FILE"
+            BUILD_IN_PROGRESS=0
             return
         fi
 
@@ -162,7 +178,7 @@ EOF
         APP_PATH=$(find build -name "*.app" -print -quit)
         if [ -z "$APP_PATH" ]; then
             echo "Error: Built app not found."
-            rm -f "$LOCK_FILE"
+            BUILD_IN_PROGRESS=0
             return
         fi
         APP_NAME=$(basename "$APP_PATH" .app)
@@ -171,13 +187,13 @@ EOF
         PLIST_BUDDY="/usr/libexec/PlistBuddy"
         if [ ! -f "$PLIST_BUDDY" ]; then
             echo "Error: PlistBuddy not found. Cannot retrieve Bundle ID."
-            rm -f "$LOCK_FILE"
+            BUILD_IN_PROGRESS=0
             return
         fi
         BUNDLE_ID=$("$PLIST_BUDDY" -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist")
         if [ -z "$BUNDLE_ID" ]; then
             echo "Error: Bundle ID not found."
-            rm -f "$LOCK_FILE"
+            BUILD_IN_PROGRESS=0
             return
         fi
 
@@ -196,8 +212,8 @@ EOF
         # Return focus to original application
         return_focus "$ORIGINAL_APP"
 
-        # Remove lock file
-        rm -f "$LOCK_FILE"
+        # Reset build in progress flag
+        BUILD_IN_PROGRESS=0
     }
 
     echo "Monitoring for file changes..."
@@ -207,7 +223,7 @@ EOF
     build_and_run
 
     # Monitor for file changes and build/run when changes occur
-    fswatch -o -l 2 "$WATCH_DIR" | while read f
+    fswatch -v --event-flags -r "${IGNORE_PATHS[@]}" "$WATCH_DIR" | while read line
     do
         build_and_run
     done

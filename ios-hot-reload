@@ -4,278 +4,306 @@ VERSION="1.0.1"
 INSTALL_DIR="$HOME/.ios-hot-reload"
 BIN_DIR="$INSTALL_DIR/bin"
 
+# ANSI color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+RESET='\033[0m'
+
+# Function to print colored text
+print_color() {
+	printf "${!1}%s${RESET}\n" "$2"
+}
+
+# Function to print a box message
+print_box_message() {
+	local message="$1"
+	local width=$((${#message} + 4))
+	printf "\n┌%s┐\n" "$(printf '─%.0s' $(seq 1 $width))"
+	printf "│  ${CYAN}%s${RESET}  │\n" "$message"
+	printf "└%s┘\n\n" "$(printf '─%.0s' $(seq 1 $width))"
+}
+
+# Function to show a progress bar
+show_progress_bar() {
+	local duration=$1
+	local steps=20
+	local sleep_time=$(bc <<<"scale=3; $duration / $steps")
+	for ((i = 0; i <= steps; i++)); do
+		local percentage=$((i * 100 / steps))
+		local completed=$((i * steps / steps))
+		printf "\r[%-${steps}s] %d%%" $(printf '='%.0s $(seq 1 $completed)) $percentage
+		sleep $sleep_time
+	done
+	printf "\n"
+}
+
+# Timestamp function
+get_timestamp() {
+	date "+%Y-%m-%d %H:%M:%S"
+}
+
 # Function to run the hot reload
 run_hot_reload() {
-    # Check if current directory is an Xcode project
-    if [ ! -d "$(pwd)/"*.xcodeproj ] && [ ! -d "$(pwd)/"*.xcworkspace ]; then
-        echo "Error: Current directory is not an Xcode project."
-        echo "Please run this command from the root of your Xcode project."
-        exit 1
-    fi
+	# Check if current directory is an Xcode project
+	if [ ! -d "$(pwd)/"*.xcodeproj ] && [ ! -d "$(pwd)/"*.xcworkspace ]; then
+		print_color "RED" "Error: Current directory is not an Xcode project."
+		echo "Please run this command from the root of your Xcode project."
+		exit 1
+	fi
 
-    # Find project file
-    PROJECT_FILE=$(find "$(pwd)" -name "*.xcodeproj")
+	# Find project file
+	PROJECT_FILE=$(find "$(pwd)" -name "*.xcodeproj")
 
-    if [ -z "$PROJECT_FILE" ]; then
-        echo "Error: No Xcode project or workspace found in the current directory."
-        exit 1
-    fi
+	if [ -z "$PROJECT_FILE" ]; then
+		print_color "RED" "Error: No Xcode project or workspace found in the current directory."
+		exit 1
+	fi
 
-    if [ -n "$PROJECT_FILE" ]; then
-        BUILD_CMD="xcodebuild -project ${PROJECT_FILE##*/}"
-    else
-        echo "Error: No Xcode project or workspace found in the current directory."
-        exit 1
-    fi
+	if [ -n "$PROJECT_FILE" ]; then
+		BUILD_CMD="xcodebuild -project ${PROJECT_FILE##*/}"
+	else
+		print_color "RED" "Error: No Xcode project or workspace found in the current directory."
+		exit 1
+	fi
 
-    # Get scheme name
-    SCHEME_NAME=$(xcodebuild -list -json | grep -m 1 '"name" :' | sed 's/.*: "\(.*\)".*/\1/')
+	# Get scheme name
+	SCHEME_NAME=$(xcodebuild -list -json | grep -m 1 '"name" :' | sed 's/.*: "\(.*\)".*/\1/')
 
-    if [ -z "$SCHEME_NAME" ]; then
-        echo "Error: No scheme found in the project."
-        exit 1
-    fi
+	if [ -z "$SCHEME_NAME" ]; then
+		print_color "RED" "Error: No scheme found in the project."
+		exit 1
+	fi
 
-    # Directory to watch (usually the source code directory)
-    WATCH_DIR="$(pwd)"
+	# Directory to watch (usually the source code directory)
+	WATCH_DIR="$(pwd)"
 
-    # Paths to ignore
-    IGNORE_PATHS=(
-      "--exclude" '.*build.*'
-      "--exclude" '.*\.xcodeproj'
-      "--exclude" '.*\.xcworkspace'
-    )
+	# Paths to ignore
+	IGNORE_PATHS=(
+		"--exclude" '.*build.*'
+		"--exclude" '.*\.xcodeproj'
+		"--exclude" '.*\.xcworkspace'
+	)
 
-    # Lock file
-    LOCK_FILE="/tmp/auto_build_run.lock"
+	# Lock file
+	LOCK_FILE="/tmp/auto_build_run.lock"
 
-    # File to record the last build time
-    LAST_BUILD_FILE="/tmp/last_build_time"
+	# File to record the last build time
+	LAST_BUILD_FILE="/tmp/last_build_time"
 
-    # File to record the last message output time
-    LAST_MESSAGE_FILE="/tmp/last_message_time"
+	# File to record the last message output time
+	LAST_MESSAGE_FILE="/tmp/last_message_time"
 
-    # Debounce time in seconds
-    DEBOUNCE_SECONDS=5
+	# Debounce time in seconds
+	DEBOUNCE_SECONDS=5
 
-    # Flag to indicate if a build is in progress
-    BUILD_IN_PROGRESS=0
+	# Flag to indicate if a build is in progress
+	BUILD_IN_PROGRESS=0
 
-    # Record the active application at the start of the script
-    ORIGINAL_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true')
+	# Record the active application at the start of the script
+	ORIGINAL_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true')
 
-    # Function to display messages
-    show_message() {
-        current_time=$(date +%s)
-        if [ ! -f "$LAST_MESSAGE_FILE" ] || [ $((current_time - $(cat "$LAST_MESSAGE_FILE"))) -ge 3 ]; then
-            echo "$1"
-            echo "$current_time" > "$LAST_MESSAGE_FILE"
-        fi
-    }
+	# Function to display messages
+	show_message() {
+		current_time=$(date +%s)
+		if [ ! -f "$LAST_MESSAGE_FILE" ] || [ $((current_time - $(cat "$LAST_MESSAGE_FILE"))) -ge 3 ]; then
+			print_color "BLUE" "$1"
+			echo "$current_time" >"$LAST_MESSAGE_FILE"
+		fi
+	}
 
-    # Function to return focus to the specified application
-    return_focus() {
-        local app_name="$1"
-        osascript <<EOF
+	# Function to return focus to the specified application
+	return_focus() {
+		local app_name="$1"
+		osascript <<EOF
     tell application "$app_name"
         activate
     end tell
 EOF
-    }
+	}
 
-    # Function to ensure lock file is removed
-    cleanup() {
-        rm -f "$LOCK_FILE"
-    }
+	# Function to ensure lock file is removed
+	cleanup() {
+		rm -f "$LOCK_FILE"
+	}
 
-    # Call cleanup function when script exits
-    trap cleanup EXIT
+	# Call cleanup function when script exits
+	trap cleanup EXIT
 
-    # Function to create a summary of the build log
-    summarize_build_log() {
-        echo "Build Summary:"
-        echo "Errors: $(grep -c "error:" "$BUILD_LOG")"
-        echo "Warnings: $(grep -c "warning:" "$BUILD_LOG")"
-        echo "------------------------"
-    }
+	# Function to create a summary of the build log
+	summarize_build_log() {
+		print_color "YELLOW" "Build Summary:"
+		print_color "YELLOW" "Errors: $(grep -c "error:" "$BUILD_LOG")"
+		print_color "YELLOW" "Warnings: $(grep -c "warning:" "$BUILD_LOG")"
+		echo "------------------------"
+	}
 
-    # Function to display colored error messages
-    display_colored_errors() {
-        grep -E "error:|warning:" "$BUILD_LOG" | sort | uniq | head -n 10 | \
-        sed 's/.*error:/\x1b[31mError:\x1b[0m/' | \
-        sed 's/.*warning:/\x1b[33mWarning:\x1b[0m/'
-    }
+	# Function to display colored error messages
+	display_colored_errors() {
+		grep -E "error:|warning:" "$BUILD_LOG" | sort | uniq | head -n 10 |
+			sed 's/.*error:/\x1b[31mError:\x1b[0m/' |
+			sed 's/.*warning:/\x1b[33mWarning:\x1b[0m/'
+	}
 
-    # Build and run function
-    build_and_run() {
-        # Skip if build is in progress
-        if [ $BUILD_IN_PROGRESS -eq 1 ]; then
-            show_message "Build in progress. Skipping."
-            return
-        fi
+	# Build and run function
+	build_and_run() {
+		# Skip if build is in progress
+		if [ $BUILD_IN_PROGRESS -eq 1 ]; then
+			show_message "Build in progress. Skipping."
+			return
+		fi
 
-        # Implement debounce
-        current_time=$(date +%s)
-        if [ -f "$LAST_BUILD_FILE" ]; then
-            last_build_time=$(cat "$LAST_BUILD_FILE")
-            time_diff=$((current_time - last_build_time))
-            if [ $time_diff -lt $DEBOUNCE_SECONDS ]; then
-                show_message "Less than $DEBOUNCE_SECONDS seconds since last build. Skipping."
-                return
-            fi
-        fi
+		# Implement debounce
+		current_time=$(date +%s)
+		if [ -f "$LAST_BUILD_FILE" ]; then
+			last_build_time=$(cat "$LAST_BUILD_FILE")
+			time_diff=$((current_time - last_build_time))
+			if [ $time_diff -lt $DEBOUNCE_SECONDS ]; then
+				show_message "Less than $DEBOUNCE_SECONDS seconds since last build. Skipping."
+				return
+			fi
+		fi
 
-        # Set build in progress flag
-        BUILD_IN_PROGRESS=1
+		# Set build in progress flag
+		BUILD_IN_PROGRESS=1
 
-        echo "Change detected. Starting build..."
-        
-        # Build with spinner animation
-        BUILD_LOG=$(mktemp)
-        spinner=('|' '/' '-' '\')
+		print_color "MAGENTA" "🔨 $(get_timestamp) Change detected. Starting build..."
 
-        # Generate project files
-        tuist generate --no-open
+		BUILD_LOG=$(mktemp)
 
-        # Run build in background and redirect all output to file
-        $BUILD_CMD build -scheme "$SCHEME_NAME" -sdk iphonesimulator -configuration Debug -derivedDataPath build > "$BUILD_LOG" 2>&1 &
-        build_pid=$!
+		# Generate project files
+		print_color "YELLOW" "🔄 Generating project files..."
+		tuist generate --no-open
 
-        # Display spinner animation
-        i=0
-        while kill -0 $build_pid 2>/dev/null; do
-            printf "\r[%c] Building... " "${spinner[i]}"
-            i=$(( (i + 1) % ${#spinner[@]} ))
-            sleep 0.1
-        done
+		# Run build and redirect all output to file
+		print_color "YELLOW" "🏗️ Building project..."
+		$BUILD_CMD build -scheme "$SCHEME_NAME" -sdk iphonesimulator -configuration Debug -derivedDataPath build >"$BUILD_LOG" 2>&1
+		build_result=$?
 
-        # Wait for build process to finish
-        wait $build_pid
-        build_result=$?
+		# Record current time as last build time
+		echo "$current_time" >"$LAST_BUILD_FILE"
 
-        printf "\r"  # Move cursor to the beginning of the line
-        echo "Build process completed.   "
+		if [ $build_result -ne 0 ]; then
+			print_color "RED" "❌ Build failed. Error details:"
+			echo "------------------------"
+			summarize_build_log
+			echo "------------------------"
+			print_color "RED" "Unique errors and warnings:"
+			display_colored_errors
+			echo "------------------------"
+			print_color "YELLOW" "For full details, check $BUILD_LOG"
+			BUILD_IN_PROGRESS=0
+			return
+		fi
 
-        # Record current time as last build time
-        echo "$current_time" > "$LAST_BUILD_FILE"
+		print_color "GREEN" "┌─────────────────────────┐"
+    print_color "GREEN" "│  🎉 BUILD SUCCEEDED 🎉  │"
+    print_color "GREEN" "└─────────────────────────┘"
 
-        if [ $build_result -ne 0 ]; then
-            echo "Build failed. Error details:"
-            echo "------------------------"
-            summarize_build_log
-            echo "------------------------"
-            echo "Unique errors and warnings:"
-            display_colored_errors
-            echo "------------------------"
-            echo "For full details, check $BUILD_LOG"
-            BUILD_IN_PROGRESS=0
-            return
-        fi
+		# Get app name
+		APP_PATH=$(find build -name "*.app" -print -quit)
+		if [ -z "$APP_PATH" ]; then
+			print_color "RED" "Error: Built app not found."
+			BUILD_IN_PROGRESS=0
+			return
+		fi
+		APP_NAME=$(basename "$APP_PATH" .app)
 
-        echo "** BUILD SUCCEEDED **"
+		# Get Bundle ID
+		PLIST_BUDDY="/usr/libexec/PlistBuddy"
+		if [ ! -f "$PLIST_BUDDY" ]; then
+			print_color "RED" "Error: PlistBuddy not found. Cannot retrieve Bundle ID."
+			BUILD_IN_PROGRESS=0
+			return
+		fi
+		BUNDLE_ID=$("$PLIST_BUDDY" -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist")
+		if [ -z "$BUNDLE_ID" ]; then
+			print_color "RED" "Error: Bundle ID not found."
+			BUILD_IN_PROGRESS=0
+			return
+		fi
 
-        # Get app name
-        APP_PATH=$(find build -name "*.app" -print -quit)
-        if [ -z "$APP_PATH" ]; then
-            echo "Error: Built app not found."
-            BUILD_IN_PROGRESS=0
-            return
-        fi
-        APP_NAME=$(basename "$APP_PATH" .app)
+		print_color "CYAN" "📱 App Path: $APP_PATH"
+		print_color "CYAN" "🆔 Bundle ID: $BUNDLE_ID"
 
-        # Get Bundle ID
-        PLIST_BUDDY="/usr/libexec/PlistBuddy"
-        if [ ! -f "$PLIST_BUDDY" ]; then
-            echo "Error: PlistBuddy not found. Cannot retrieve Bundle ID."
-            BUILD_IN_PROGRESS=0
-            return
-        fi
-        BUNDLE_ID=$("$PLIST_BUDDY" -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist")
-        if [ -z "$BUNDLE_ID" ]; then
-            echo "Error: Bundle ID not found."
-            BUILD_IN_PROGRESS=0
-            return
-        fi
+		# Launch simulator (does nothing if already running)
+		open -a Simulator
 
-        echo "App Path: $APP_PATH"
-        echo "Bundle ID: $BUNDLE_ID"
+		# Install and launch app
+		xcrun simctl install booted "$APP_PATH"
+		xcrun simctl launch booted "$BUNDLE_ID"
 
-        # Launch simulator (does nothing if already running)
-        open -a Simulator
+		print_color "GREEN" "✅ $(get_timestamp) Build and launch completed. Continuing to monitor for changes..."
 
-        # Install and launch app
-        xcrun simctl install booted "$APP_PATH"
-        xcrun simctl launch booted "$BUNDLE_ID"
+		# Return focus to original application
+		return_focus "$ORIGINAL_APP"
 
-        echo "Build and launch completed. Continuing to monitor for changes..."
+		# Reset build in progress flag
+		BUILD_IN_PROGRESS=0
+	}
 
-        # Return focus to original application
-        return_focus "$ORIGINAL_APP"
+	print_color "BLUE" "🔍 Monitoring for file changes..."
+	print_color "BLUE" "🖥️  Original application: $ORIGINAL_APP"
 
-        # Reset build in progress flag
-        BUILD_IN_PROGRESS=0
-    }
+	# Initial build and run
+	build_and_run
 
-    echo "Monitoring for file changes..."
-    echo "Original application: $ORIGINAL_APP"
-
-    # Initial build and run
-    build_and_run
-
-    # Monitor for file changes and build/run when changes occur
-    fswatch -v --event-flags -r "${IGNORE_PATHS[@]}" "$WATCH_DIR" | while read line
-    do
-        build_and_run
-    done
+	# Monitor for file changes and build/run when changes occur
+	fswatch --event-flags -r "${IGNORE_PATHS[@]}" "$WATCH_DIR" 2>/dev/null | while read line; do
+		build_and_run
+	done
 }
 
 # Function to uninstall the script
 uninstall_script() {
-    echo "Uninstalling ios-hot-reload..."
-    
-    # Remove the installation directory
-    rm -rf "$INSTALL_DIR"
-    
-    # Remove the completion script
-    rm -rf "/usr/local/etc/bash_completion.d/ios-hot-reload"
-    
-    # Determine which shell configuration file to modify
-    SHELL_CONFIG="$HOME/.zshrc"
-    if [ -f "$HOME/.bashrc" ]; then
-        SHELL_CONFIG="$HOME/.bashrc"
-    fi
-    
-    # Remove the PATH addition from the shell configuration file
-    if [ -f "$SHELL_CONFIG" ]; then
-        sed -i.bak '/# ios-hot-reload PATH addition/d' "$SHELL_CONFIG"
-        sed -i.bak '/export PATH=.*ios-hot-reload/d' "$SHELL_CONFIG"
-        rm -f "${SHELL_CONFIG}.bak"
-    fi
-    
-    echo "Uninstallation completed. Please restart your terminal or run 'source $SHELL_CONFIG' to apply changes."
+	print_color "YELLOW" "Uninstalling ios-hot-reload..."
+
+	# Remove the installation directory
+	rm -rf "$INSTALL_DIR"
+
+	# Remove the completion script
+	rm -rf "/usr/local/etc/bash_completion.d/ios-hot-reload"
+
+	# Determine which shell configuration file to modify
+	SHELL_CONFIG="$HOME/.zshrc"
+	if [ -f "$HOME/.bashrc" ]; then
+		SHELL_CONFIG="$HOME/.bashrc"
+	fi
+
+	# Remove the PATH addition from the shell configuration file
+	if [ -f "$SHELL_CONFIG" ]; then
+		sed -i.bak '/# ios-hot-reload PATH addition/d' "$SHELL_CONFIG"
+		sed -i.bak '/export PATH=.*ios-hot-reload/d' "$SHELL_CONFIG"
+		rm -f "${SHELL_CONFIG}.bak"
+	fi
+
+	print_color "GREEN" "Uninstallation completed. Please restart your terminal or run 'source $SHELL_CONFIG' to apply changes."
 }
 
 # Function to display version
 show_version() {
-    echo "ios-hot-reload version $VERSION"
+	print_color "BLUE" "ios-hot-reload version $VERSION"
 }
 
 # Main command logic
 case "$1" in
-    run)
-        run_hot_reload
-        ;;
-    uninstall)
-        uninstall_script
-        ;;
-    -v|--version)
-        show_version
-        ;;
-    *)
-        echo "Usage: ios-hot-reload [run|uninstall|-v|--version]"
-        echo "  run               : Run the hot reload script"
-        echo "  uninstall         : Remove the script"
-        echo "  -v|--version : Display the current version"
-        exit 1
-        ;;
+run)
+	run_hot_reload
+	;;
+uninstall)
+	uninstall_script
+	;;
+-v | --version)
+	show_version
+	;;
+*)
+	echo "Usage: ios-hot-reload [run|uninstall|-v|--version]"
+	echo "  run               : Run the hot reload script"
+	echo "  uninstall         : Remove the script"
+	echo "  -v|--version : Display the current version"
+	exit 1
+	;;
 esac
